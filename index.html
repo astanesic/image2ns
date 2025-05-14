@@ -55,7 +55,7 @@
       }
     }
 
- async function confirmUpload() {
+async function confirmUpload() {
   const output = document.getElementById('output');
   if (!file) return;
 
@@ -71,14 +71,21 @@
       body: formData
     });
 
-    const result = await res.json();
+    let result = null;
+    try {
+      result = await res.json();
+    } catch (jsonErr) {
+      output.innerText = '❌ Backend nije vratio ispravan JSON.';
+      return;
+    }
+
     if (res.ok) {
       output.innerText =
         (result.message || '✅ Podaci poslani.') +
         '\\n' +
         (result.log ? result.log.join('\\n') : '');
     } else {
-      output.innerText = result.error || '❌ Greška pri slanju.';
+      output.innerText = result?.error || '❌ Greška pri slanju.';
     }
   } catch (e) {
     output.innerText = '❌ Neuspjelo: ' + e.message;
