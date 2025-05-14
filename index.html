@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="hr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Unos Inzulina</title>
+</head>
+<body style="font-family:sans-serif;padding:1rem">
+  <h2>📷 Učitaj sliku sa inzulin unosom</h2>
+  <input type="file" id="imageInput" accept="image/*" capture="environment" /><br/><br/>
+  <button onclick="sendImage()">Pošalji sliku</button>
+  <div id="confirmSection" style="display:none;margin-top:1rem">
+    <h4>🧐 Detektirani podaci:</h4>
+    <pre id="detected"></pre>
+    <button onclick="confirmUpload()">✅ Pošalji u Nightscout</button>
+  </div>
+  <pre id="output" style="margin-top:1rem;white-space:pre-wrap"></pre>
+
+  <script>
+    let file = null;
+
+    async function sendImage() {
+      const fileInput = document.getElementById('imageInput');
+      const output = document.getElementById('output');
+      const detected = document.getElementById('detected');
+      const confirmSection = document.getElementById('confirmSection');
+      file = fileInput.files[0];
+      if (!file) {
+        output.innerText = '⚠️ Molimo odaberite sliku.';
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append('image', file);
+
+      output.innerText = '⏳ Šaljem sliku...';
+      confirmSection.style.display = 'none';
+
+      try {
+        const res = await fetch('https://image2ns.onrender.com/upload', {
+          method: 'POST',
+          body: formData
+        });
+
+        const result = await res.json();
+        if (res.ok && result.data) {
+          detected.innerText = result.data.join("\n");
+          confirmSection.style.display = 'block';
+          output.innerText = '✅ Pregledaj podatke ispod i potvrdi slanje';
+        } else {
+          output.innerText = result.message || result.error || '⚠️ Greška pri obradi slike';
+        }
+      } catch (e) {
+        output.innerText = '❌ Neuspjelo: ' + e;
+      }
+    }
+
+    async function confirmUpload() {
+      const output = document.getElementById('output');
+      if (!file) return;
+
+      const formData = new FormData();
+      formData.append('image', file);
+      formData.append('confirm', 'yes');
+
+      output.innerText = '📤 Šaljem podatke u Nightscout...';
+
+      try {
+        const res = await fetch('https://your-api-url.onrender.com/upload', {
+          method: 'POST',
+          body: formData
+        });
+        const result = await res.json();
+        output.innerText = result.message + '\n' + (result.log || []).join("\n");
+      } catch (e) {
+        output.innerText = '❌ Neuspjelo: ' + e;
+      }
+    }
+  </script>
+</body>
+</html>
