@@ -7,7 +7,7 @@ import pytz
 import json
 import requests
 from datetime import datetime
-from fastapi import FastAPI, File, UploadFile
+from fastapi import FastAPI, File, UploadFile, Form
 from fastapi.middleware.cors import CORSMiddleware
 from openai import OpenAI
 from PIL import Image
@@ -36,6 +36,9 @@ client = OpenAI(
     base_url="https://openrouter.ai/api/v1"
 )
 
+app.get("/")
+def root():
+    return {"message": "Image to Nightscout API radi"}
 
 def image_to_base64(image_file: UploadFile):
     image = Image.open(image_file.file).convert("RGB")
@@ -96,13 +99,13 @@ def send_to_nightscout(date_str, time_str, insulin_units):
     )
 
     if response.status_code == 200:
-        return f"{treatment_time}, {insulin_units}U"
+        return f"Uploded to NS: {treatment_time}, {insulin_units}U"
     else:
         return f"Greška: {response.status_code} - {response.text}"
 
 
 @app.post("/upload")
-def upload_image(image: UploadFile = File(...)):
+def upload_image(image: UploadFile = File(...), confirm: str = Form("no")):
     try:
         base64_img = image_to_base64(image)
         result = extract_data(base64_img)
@@ -112,19 +115,32 @@ def upload_image(image: UploadFile = File(...)):
         except:
             return {"error": "GPT nije vratio valjan JSON.", "response": result}
 
+        pregled = []
+        if isinstance(data, list):
+            for entry in data:
+                if all(k in entry for k in ["date", "time", "insulin"]):
+                    pregled.append(f"{entry['date']} {entry['time']} – {entry['insulin']}U")
+        elif isinstance(data, dict):
+            pregled.append(f"{data['date']} {data['time']} – {data['insulin']}U")
+
+        # Ako potvrda nije dana, samo prikaži što je pronađeno
+        if confirm != "yes":
+            return {
+                "message": "Pronađeni podaci:",
+                "data": pregled,
+                "note": "Pošalji ponovno s confirm=yes ako želiš upisati u Nightscout."
+            }
+
+        # Ako je potvrda dana, šalji
         messages = []
         if isinstance(data, list):
             for entry in data:
                 if all(k in entry for k in ["date", "time", "insulin"]):
                     msg = send_to_nightscout(entry["date"], entry["time"], entry["insulin"])
                     messages.append(msg)
-                else:
-                    messages.append(f"Neispravan unos: {entry}")
         elif isinstance(data, dict):
             msg = send_to_nightscout(data["date"], data["time"], data["insulin"])
             messages.append(msg)
-
-        return {"message": "\n".join(messages)}
 
     except Exception as e:
         return {"error": str(e)}
