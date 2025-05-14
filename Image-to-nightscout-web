@@ -1,0 +1,56 @@
+// Web aplikacija frontend (React + Tailwind)
+// Omogućuje upload slike i slanje serveru (backendu u FastAPI)
+
+import { useState } from "react"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+
+export default function UploadPage() {
+  const [file, setFile] = useState<File | null>(null)
+  const [message, setMessage] = useState("")
+
+  const handleSubmit = async () => {
+    if (!file) return
+
+    const formData = new FormData()
+    formData.append("image", file)
+
+    setMessage("⏳ Obrada slike...")
+    try {
+      const response = await fetch("/upload", {
+        method: "POST",
+        body: formData,
+      })
+      const result = await response.json()
+      if (response.ok) {
+        setMessage("✔️ Poslano u Nightscout: " + result.message)
+      } else {
+        setMessage("❌ Greška: " + result.error)
+      }
+    } catch (err) {
+      setMessage("❌ Neuspješno povezivanje sa serverom")
+    }
+  }
+
+  return (
+    <div className="min-h-screen flex items-center justify-center p-4">
+      <Card className="max-w-md w-full p-4 space-y-4">
+        <CardContent>
+          <h2 className="text-xl font-bold mb-4">Unos inzulina sa slike</h2>
+          <Input
+            type="file"
+            accept="image/*"
+            capture="environment"
+            onChange={(e) => setFile(e.target.files?.[0] || null)}
+          />
+          <Button onClick={handleSubmit} className="w-full mt-4">
+            Pošalji sliku
+          </Button>
+          {message && <p className="mt-4 text-sm whitespace-pre-wrap">{message}</p>}
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+
