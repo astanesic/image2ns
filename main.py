@@ -113,7 +113,7 @@ def upload_image(image: UploadFile = File(...), confirm: str = Form("no")):
         try:
             data = json.loads(result)
         except:
-            return {"error": "GPT nije vratio valjan JSON.", "response": result}
+            return {"error": f"GPT nije vratio valjan JSON.{result}", "response": result}
 
         pregled = []
         if isinstance(data, list):
