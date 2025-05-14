@@ -51,7 +51,7 @@ def extract_data(base64_image):
     prompt = (
         "Na ovoj slici se nalazi unos inzulina."
         " Izvuci dan i mjesec (bez godine), vrijeme i količinu inzulina u jedinicama (U)."
-        " Vrati JSON listu u formatu: [ {\"date\":\"MM-DD\", \"time\":\"HH:MM\", \"insulin\": BROJ}, ... ]"
+        " Vrati isključivo JSON listu u formatu: [ {\"date\":\"MM-DD\", \"time\":\"HH:MM\", \"insulin\": BROJ}, ... ]"
         " Ako nema jasnih podataka, vrati poruku 'Nije pronađeno'."
     )
 
@@ -68,6 +68,17 @@ def extract_data(base64_image):
     )
     return response.choices[0].message.content
 
+def parse_extracted_data(extracted):
+    try:
+        # Pokušaj parsirati ako je string
+        data = json.loads(extracted)
+        print("✅ Parsirano kao JSON string.")
+    except (TypeError, json.JSONDecodeError):
+        # Ako već jest lista ili rječnik
+        data = extracted
+        print("ℹ️ Korišteno kao već-parsirana struktura.")
+
+    return data
 
 def send_to_nightscout(date_str, time_str, insulin_units):
     if re.fullmatch(r"\d{2}-\d{2}", date_str):
@@ -111,7 +122,7 @@ def upload_image(image: UploadFile = File(...), confirm: str = Form("no")):
         result = extract_data(base64_img)
 
         try:
-            data = json.loads(result)
+            data = parse_extracted_data(result)
         except:
             return {"error": f"GPT nije vratio valjan JSON.{result}", "response": result}
 
