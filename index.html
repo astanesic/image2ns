@@ -6,7 +6,7 @@
   <title>Unos Inzulina</title>
 </head>
 <body style="font-family:sans-serif;padding:1rem">
-  <h2>📷 Učitaj sliku sa inzulin unosom</h2>
+  <h2>📷 Učitaj sliku pumpe sa vrijednostima inzulina</h2>
   <input type="file" id="imageInput" accept="image/*" capture="environment" /><br/><br/>
   <button onclick="sendImage()">Pošalji sliku</button>
   <div id="confirmSection" style="display:none;margin-top:1rem">
@@ -55,27 +55,37 @@
       }
     }
 
-    async function confirmUpload() {
-      const output = document.getElementById('output');
-      if (!file) return;
+ async function confirmUpload() {
+  const output = document.getElementById('output');
+  if (!file) return;
 
-      const formData = new FormData();
-      formData.append('image', file);
-      formData.append('confirm', 'yes');
+  const formData = new FormData();
+  formData.append('image', file);
+  formData.append('confirm', 'yes');
 
-      output.innerText = '📤 Šaljem podatke u Nightscout...';
+  output.innerText = '📤 Šaljem podatke u Nightscout...';
 
-      try {
-        const res = await fetch('https://your-api-url.onrender.com/upload', {
-          method: 'POST',
-          body: formData
-        });
-        const result = await res.json();
-        output.innerText = result.message + '\n' + (result.log || []).join("\n");
-      } catch (e) {
-        output.innerText = '❌ Neuspjelo: ' + e;
-      }
+  try {
+    const res = await fetch('https://image2ns.onrender.com/upload', {
+      method: 'POST',
+      body: formData
+    });
+
+    const result = await res.json();
+    if (res.ok) {
+      output.innerText =
+        (result.message || '✅ Podaci poslani.') +
+        '\\n' +
+        (result.log ? result.log.join('\\n') : '');
+    } else {
+      output.innerText = result.error || '❌ Greška pri slanju.';
     }
+  } catch (e) {
+    output.innerText = '❌ Neuspjelo: ' + e.message;
+  }
+}
+
+
   </script>
 </body>
 </html>
