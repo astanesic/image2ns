@@ -1,4 +1,4 @@
-# FastAPI backend koji prima sliku i šalje inzulin podatke u Nightscout
+# FastAPI backend koji prima sliku, šalje GPT-u, prikazuje korisniku i po potrebi šalje u Nightscout
 
 import base64
 import io
@@ -7,7 +7,7 @@ import pytz
 import json
 import requests
 from datetime import datetime
-from fastapi import FastAPI, File, UploadFile, Form
+from fastapi import FastAPI, File, UploadFile, Form, Request
 from fastapi.middleware.cors import CORSMiddleware
 from openai import OpenAI
 from PIL import Image
@@ -23,12 +23,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Konfiguracija
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 NIGHTSCOUT_TOKEN = os.getenv("NIGHTSCOUT_TOKEN")
 NIGHTSCOUT_URL = os.getenv("NIGHTSCOUT_URL")
 
-MODEL_NAME = "meta-llama/llama-3.2-11b-vision-instruct:free"
+MODEL_NAME = "meta-llama/llama-3.2-11b-vision-instruct"
 LOCAL_TZ = pytz.timezone("Europe/Zagreb")
 
 client = OpenAI(
@@ -36,7 +35,7 @@ client = OpenAI(
     base_url="https://openrouter.ai/api/v1"
 )
 
-app.get("/")
+@app.get("/")
 def root():
     return {"message": "Image to Nightscout API radi"}
 
@@ -45,7 +44,6 @@ def image_to_base64(image_file: UploadFile):
     buffer = io.BytesIO()
     image.save(buffer, format="JPEG")
     return base64.b64encode(buffer.getvalue()).decode("utf-8")
-
 
 def extract_data(base64_image):
     prompt = (
@@ -70,15 +68,9 @@ def extract_data(base64_image):
 
 def parse_extracted_data(extracted):
     try:
-        # Pokušaj parsirati ako je string
-        data = json.loads(extracted)
-        print("✅ Parsirano kao JSON string.")
+        return json.loads(extracted)
     except (TypeError, json.JSONDecodeError):
-        # Ako već jest lista ili rječnik
-        data = extracted
-        print("ℹ️ Korišteno kao već-parsirana struktura.")
-
-    return data
+        return extracted
 
 def send_to_nightscout(date_str, time_str, insulin_units):
     if re.fullmatch(r"\d{2}-\d{2}", date_str):
@@ -110,21 +102,16 @@ def send_to_nightscout(date_str, time_str, insulin_units):
     )
 
     if response.status_code == 200:
-        return f"Uploded to NS: {treatment_time}, {insulin_units}U"
+        return f"Uploaded to NS: {treatment_time}, {insulin_units}U"
     else:
         return f"Greška: {response.status_code} - {response.text}"
 
-
 @app.post("/upload")
-def upload_image(image: UploadFile = File(...), confirm: str = Form("no")):
+def upload_image(image: UploadFile = File(...)):
     try:
         base64_img = image_to_base64(image)
         result = extract_data(base64_img)
-
-        try:
-            data = parse_extracted_data(result)
-        except:
-            return {"error": f"GPT nije vratio valjan JSON.{result}", "response": result}
+        data = parse_extracted_data(result)
 
         pregled = []
         if isinstance(data, list):
@@ -134,24 +121,32 @@ def upload_image(image: UploadFile = File(...), confirm: str = Form("no")):
         elif isinstance(data, dict):
             pregled.append(f"{data['date']} {data['time']} – {data['insulin']}U")
 
-        # Ako potvrda nije dana, samo prikaži što je pronađeno
-        if confirm != "yes":
-            return {
-                "message": "Pronađeni podaci:",
-                "data": pregled,
-                "note": "Pošalji ponovno s confirm=yes ako želiš upisati u Nightscout."
-            }
+        return {
+            "message": "Pronađeni podaci:",
+            "data": pregled,
+            "raw": data
+        }
 
-        # Ako je potvrda dana, šalji
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.post("/confirm")
+def confirm_data(request: Request):
+    try:
+        body = request.json()
+        entries = body.get("entries", [])
+
         messages = []
-        if isinstance(data, list):
-            for entry in data:
-                if all(k in entry for k in ["date", "time", "insulin"]):
-                    msg = send_to_nightscout(entry["date"], entry["time"], entry["insulin"])
-                    messages.append(msg)
-        elif isinstance(data, dict):
-            msg = send_to_nightscout(data["date"], data["time"], data["insulin"])
-            messages.append(msg)
+        for line in entries:
+            match = re.match(r"(\d{2}-\d{2}) (\d{2}:\d{2}) – (\d+(\.\d+)?)U", line)
+            if match:
+                date_str, time_str, insulin_units = match.group(1), match.group(2), float(match.group(3))
+                msg = send_to_nightscout(date_str, time_str, insulin_units)
+                messages.append(msg)
+            else:
+                messages.append(f"Ne mogu parsirati zapis: {line}")
+
+        return {"message": "Rezultati slanja:", "log": messages}
 
     except Exception as e:
         return {"error": str(e)}

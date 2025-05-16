@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="hr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Unos Inzulina</title>
+</head>
+<body style="font-family:sans-serif;padding:1rem">
+  <h2>📷 Učitaj sliku sa inzulin unosom</h2>
+  <input type="file" id="imageInput" accept="image/*" capture="environment" /><br/><br/>
+  <button onclick="sendImage()">Pošalji</button>
+  <pre id="output" style="margin-top:1rem;white-space:pre-wrap"></pre>
+
+  <script>
+    async function sendImage() {
+      const fileInput = document.getElementById('imageInput');
+      const output = document.getElementById('output');
+      const file = fileInput.files[0];
+      if (!file) {
+        output.innerText = '⚠️ Molimo odaberite sliku.';
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append('image', file);
+
+      output.innerText = '⏳ Šaljem sliku...';
+
+      try {
+        const res = await fetch('https://your-api-url.onrender.com/upload', {
+          method: 'POST',
+          body: formData
+        });
+
+        const result = await res.json();
+        output.innerText = res.ok ? result.message : (result.error || 'Greška');
+      } catch (e) {
+        output.innerText = '❌ Neuspjelo: ' + e;
+      }
+    }
+  </script>
+</body>
+</html>

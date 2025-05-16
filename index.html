@@ -7,24 +7,28 @@
 </head>
 <body style="font-family:sans-serif;padding:1rem">
   <h2>📷 Učitaj sliku pumpe sa vrijednostima inzulina</h2>
-  <input type="file" id="imageInput" accept="image/*" capture="environment" /><br/><br/>
+  <input type="file" id="imageInput" accept="image/*" /><br/><br/>
   <button onclick="sendImage()">Pošalji sliku</button>
+
   <div id="confirmSection" style="display:none;margin-top:1rem">
     <h4>🧐 Detektirani podaci:</h4>
-    <pre id="detected"></pre>
-    <button onclick="confirmUpload()">✅ Pošalji u Nightscout</button>
+    <form id="dataForm"></form>
+    <button onclick="confirmUpload()">✅ Pošalji označene u Nightscout</button>
+    <button onclick="cancelUpload()">❌ Nemoj slati ništa</button>
   </div>
+
   <pre id="output" style="margin-top:1rem;white-space:pre-wrap"></pre>
 
   <script>
-    let file = null;
+    let parsedData = [];
 
     async function sendImage() {
       const fileInput = document.getElementById('imageInput');
       const output = document.getElementById('output');
-      const detected = document.getElementById('detected');
       const confirmSection = document.getElementById('confirmSection');
-      file = fileInput.files[0];
+      const dataForm = document.getElementById('dataForm');
+
+      const file = fileInput.files[0];
       if (!file) {
         output.innerText = '⚠️ Molimo odaberite sliku.';
         return;
@@ -35,6 +39,7 @@
 
       output.innerText = '⏳ Šaljem sliku...';
       confirmSection.style.display = 'none';
+      dataForm.innerHTML = '';
 
       try {
         const res = await fetch('https://image2ns.onrender.com/upload', {
@@ -44,9 +49,25 @@
 
         const result = await res.json();
         if (res.ok && result.data) {
-          detected.innerText = result.data.join("\n");
+          parsedData = result.data;
+          parsedData.forEach((entry, index) => {
+            const checkbox = document.createElement("input");
+            checkbox.type = "checkbox";
+            checkbox.id = `entry-${index}`;
+            checkbox.checked = true;
+
+            const label = document.createElement("label");
+            label.htmlFor = `entry-${index}`;
+            label.innerText = entry;
+
+            const br = document.createElement("br");
+            dataForm.appendChild(checkbox);
+            dataForm.appendChild(label);
+            dataForm.appendChild(br);
+          });
+
           confirmSection.style.display = 'block';
-          output.innerText = '✅ Pregledaj podatke ispod i potvrdi slanje';
+          output.innerText = '✅ Pregledaj podatke i pošalji samo one koje želiš';
         } else {
           output.innerText = result.message || result.error || '⚠️ Greška pri obradi slike';
         }
@@ -55,44 +76,54 @@
       }
     }
 
-async function confirmUpload() {
-  const output = document.getElementById('output');
-  if (!file) return;
+    async function confirmUpload() {
+      const output = document.getElementById('output');
+      const selected = [];
 
-  const formData = new FormData();
-  formData.append('image', file);
-  formData.append('confirm', 'yes');
+      parsedData.forEach((entry, index) => {
+        const checkbox = document.getElementById(`entry-${index}`);
+        if (checkbox.checked) {
+          const match = entry.match(/(\d{2}-\d{2}) (\d{2}:\d{2}) – (\d+(?:\.\d+)?)U/);
+          if (match) {
+            selected.push({
+              date: match[1],
+              time: match[2],
+              insulin: parseFloat(match[3])
+            });
+          }
+        }
+      });
 
-  output.innerText = '📤 Šaljem podatke u Nightscout...';
+      if (selected.length === 0) {
+        output.innerText = "⚠️ Niti jedan zapis nije odabran.";
+        return;
+      }
 
-  try {
-    const res = await fetch('https://image2ns.onrender.com/upload', {
-      method: 'POST',
-      body: formData
-    });
+      output.innerText = '📤 Šaljem označene podatke u Nightscout...';
 
-    let result = null;
-    try {
-      result = await res.json();
-    } catch (jsonErr) {
-      output.innerText = '❌ Backend nije vratio ispravan JSON.';
-      return;
+      try {
+        const res = await fetch('https://image2ns.onrender.com/confirm', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({entries: selected})
+        });
+
+        const result = await res.json();
+        if (res.ok) {
+          output.innerText = '✅ Rezultati:\n' + result.log.join("\n");
+        } else {
+          output.innerText = result?.error || '❌ Greška pri slanju.';
+        }
+      } catch (e) {
+        output.innerText = '❌ Neuspjelo: ' + e.message;
+      }
     }
 
-    if (res.ok) {
-      output.innerText =
-        (result.message || '✅ Podaci poslani.') +
-        '\\n' +
-        (result.log ? result.log.join('\\n') : '');
-    } else {
-      output.innerText = result?.error || '❌ Greška pri slanju.';
+    function cancelUpload() {
+      document.getElementById('confirmSection').style.display = 'none';
+      document.getElementById('output').innerText = '🚫 Slanje otkazano.';
     }
-  } catch (e) {
-    output.innerText = '❌ Neuspjelo: ' + e.message;
-  }
-}
-
-
   </script>
 </body>
 </html>
+
