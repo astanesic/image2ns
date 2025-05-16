@@ -7,27 +7,25 @@
 </head>
 <body style="font-family:sans-serif;padding:1rem">
   <h2>📷 Učitaj sliku pumpe sa vrijednostima inzulina</h2>
-  <input type="file" id="imageInput" accept="image/*" /><br/><br/>
+  <input type="file" id="imageInput" accept="image/*" capture="environment" /><br/><br/>
   <button onclick="sendImage()">Pošalji sliku</button>
-
   <div id="confirmSection" style="display:none;margin-top:1rem">
     <h4>🧐 Detektirani podaci:</h4>
-    <form id="dataForm"></form>
-    <button onclick="confirmUpload()">✅ Pošalji označene u Nightscout</button>
-    <button onclick="cancelUpload()">❌ Nemoj slati ništa</button>
+    <small>Ako neke zapise ne želite poslati, odznačite ih.</small>
+    <div id="recordList" style="margin-top:0.5rem;"></div>
+    <button onclick="confirmUpload()">✅ Pošalji u Nightscout</button>
+    <button onclick="rejectUpload()">🚫 Odbaci</button>
   </div>
-
   <pre id="output" style="margin-top:1rem;white-space:pre-wrap"></pre>
 
   <script>
-    let parsedData = [];
+    let entries = null;
 
     async function sendImage() {
       const fileInput = document.getElementById('imageInput');
       const output = document.getElementById('output');
+      const recordList = document.getElementById('recordList');
       const confirmSection = document.getElementById('confirmSection');
-      const dataForm = document.getElementById('dataForm');
-
       const file = fileInput.files[0];
       if (!file) {
         output.innerText = '⚠️ Molimo odaberite sliku.';
@@ -39,35 +37,27 @@
 
       output.innerText = '⏳ Šaljem sliku...';
       confirmSection.style.display = 'none';
-      dataForm.innerHTML = '';
 
       try {
         const res = await fetch('https://image2ns.onrender.com/upload', {
           method: 'POST',
           body: formData
         });
-
         const result = await res.json();
         if (res.ok && result.data) {
-          parsedData = result.data;
-          parsedData.forEach((entry, index) => {
-            const checkbox = document.createElement("input");
-            checkbox.type = "checkbox";
-            checkbox.id = `entry-${index}`;
-            checkbox.checked = true;
-
-            const label = document.createElement("label");
-            label.htmlFor = `entry-${index}`;
-            label.innerText = entry;
-
-            const br = document.createElement("br");
-            dataForm.appendChild(checkbox);
-            dataForm.appendChild(label);
-            dataForm.appendChild(br);
+          // Store structured entries for confirmation
+          entries = result.entries || [];
+          // Build checkbox list of detected entries
+          recordList.innerHTML = '';
+          entries.forEach((entry, index) => {
+            const label = document.createElement('label');
+            label.innerHTML = '<input type="checkbox" id="rec' + index + '" checked> ' +
+                              (result.data[index] || (entry.date + ' ' + entry.time + ' – ' + entry.insulin + 'U'));
+            recordList.appendChild(label);
+            recordList.appendChild(document.createElement('br'));
           });
-
           confirmSection.style.display = 'block';
-          output.innerText = '✅ Pregledaj podatke i pošalji samo one koje želiš';
+          output.innerText = '✅ Pregledaj podatke ispod i potvrdi slanje';
         } else {
           output.innerText = result.message || result.error || '⚠️ Greška pri obradi slike';
         }
@@ -78,50 +68,56 @@
 
     async function confirmUpload() {
       const output = document.getElementById('output');
+      if (!entries) {
+        output.innerText = '⚠️ Nema podataka za slanje.';
+        return;
+      }
+      // Gather selected entries
+      const checkboxes = document.querySelectorAll('#recordList input[type=checkbox]');
       const selected = [];
-
-      parsedData.forEach((entry, index) => {
-        const checkbox = document.getElementById(`entry-${index}`);
-        if (checkbox.checked) {
-          const match = entry.match(/(\d{2}-\d{2}) (\d{2}:\d{2}) – (\d+(?:\.\d+)?)U/);
-          if (match) {
-            selected.push({
-              date: match[1],
-              time: match[2],
-              insulin: parseFloat(match[3])
-            });
-          }
+      checkboxes.forEach((cb, idx) => {
+        if (cb.checked) {
+          selected.push(entries[idx]);
         }
       });
-
       if (selected.length === 0) {
-        output.innerText = "⚠️ Niti jedan zapis nije odabran.";
+        output.innerText = '⚠️ Nema označenih zapisa za slanje.';
         return;
       }
 
-      output.innerText = '📤 Šaljem označene podatke u Nightscout...';
+      output.innerText = '📤 Šaljem podatke u Nightscout...';
 
       try {
         const res = await fetch('https://image2ns.onrender.com/confirm', {
           method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({entries: selected})
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(selected)
         });
-
         const result = await res.json();
         if (res.ok) {
-          output.innerText = '✅ Rezultati:\n' + result.log.join("\n");
+          output.innerText =
+            (result.message || '✅ Podaci poslani.') + '\n' +
+            (result.log ? result.log.join('\n') : '');
+          // optionally hide confirm section after success
+          // confirmSection.style.display = 'none';
         } else {
           output.innerText = result?.error || '❌ Greška pri slanju.';
         }
       } catch (e) {
-        output.innerText = '❌ Neuspjelo: ' + e.message;
+        output.innerText = '❌ Neuspjelo: ' + e;
       }
     }
 
-    function cancelUpload() {
-      document.getElementById('confirmSection').style.display = 'none';
-      document.getElementById('output').innerText = '🚫 Slanje otkazano.';
+    function rejectUpload() {
+      const output = document.getElementById('output');
+      const fileInput = document.getElementById('imageInput');
+      const confirmSection = document.getElementById('confirmSection');
+      // Hide confirm section and clear stored data
+      confirmSection.style.display = 'none';
+      entries = null;
+      // Reset file input so the same file can be re-selected if needed
+      fileInput.value = '';
+      output.innerText = '❌ Zapis odbačen.';
     }
   </script>
 </body>
